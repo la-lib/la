@@ -30,6 +30,9 @@ Global
 		ReleaseMini|Win32 = ReleaseMini|Win32
 		ReleaseMini|x64 = ReleaseMini|x64
 		ReleaseMini|x86 = ReleaseMini|x86
+		ReleaseMiniConsole|Win32 = ReleaseMiniConsole|Win32
+		ReleaseMiniConsole|x64 = ReleaseMiniConsole|x64
+		ReleaseMiniConsole|x86 = ReleaseMiniConsole|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{8EBA3C3A-C9F2-4978-82C4-AD5D315CA63E}.Debug_LegacyCXX|Win32.ActiveCfg = Debug_LegacyCXX|Win32
@@ -80,6 +83,12 @@ Global
 		{8EBA3C3A-C9F2-4978-82C4-AD5D315CA63E}.ReleaseMini|x64.Build.0 = ReleaseMini|x64
 		{8EBA3C3A-C9F2-4978-82C4-AD5D315CA63E}.ReleaseMini|x86.ActiveCfg = ReleaseMini|Win32
 		{8EBA3C3A-C9F2-4978-82C4-AD5D315CA63E}.ReleaseMini|x86.Build.0 = ReleaseMini|Win32
+		{8EBA3C3A-C9F2-4978-82C4-AD5D315CA63E}.ReleaseMiniConsole|Win32.ActiveCfg = ReleaseMiniConsole|Win32
+		{8EBA3C3A-C9F2-4978-82C4-AD5D315CA63E}.ReleaseMiniConsole|Win32.Build.0 = ReleaseMiniConsole|Win32
+		{8EBA3C3A-C9F2-4978-82C4-AD5D315CA63E}.ReleaseMiniConsole|x64.ActiveCfg = ReleaseMiniConsole|x64
+		{8EBA3C3A-C9F2-4978-82C4-AD5D315CA63E}.ReleaseMiniConsole|x64.Build.0 = ReleaseMiniConsole|x64
+		{8EBA3C3A-C9F2-4978-82C4-AD5D315CA63E}.ReleaseMiniConsole|x86.ActiveCfg = ReleaseMiniConsole|Win32
+		{8EBA3C3A-C9F2-4978-82C4-AD5D315CA63E}.ReleaseMiniConsole|x86.Build.0 = ReleaseMiniConsole|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

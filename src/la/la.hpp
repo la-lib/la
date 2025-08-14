@@ -35,24 +35,24 @@ extern "C" void* __cdecl memset(void* dest, int ch, size_t count);
 #   endif
 
 #   if CPP_VERSION >= 201703L
-#       define __LA_CXX_17
+#       define LA_CXX_17
 #   endif 
 
 // CLang
 #elif defined(__clang__)
 #   if __cplusplus >= 201703L
-#       define __LA_CXX_17
+#       define LA_CXX_17
 #   endif
 
 // GNU
 #elif defined(__GNUC__)
 #   if __cplusplus >= 201703L
-#       define __LA_CXX_17
+#       define LA_CXX_17
 #   endif
 #endif // C++17 feature detection
 
 // Replace `main` with `WinMain`.
-#if defined(_MSC_VER) && !defined(_DEBUG) && !defined(_CONSOLE)
+#if defined(_MSC_VER) && !defined(_DEBUG)
 /* Detected Windows GUI application without console.
    The main() function was quietly changed to WinMain()
    main()'s arguments are NOT AVAILABLE. */
@@ -64,40 +64,35 @@ extern "C" void* __cdecl memset(void* dest, int ch, size_t count);
 
 // ------------------------ `restrict` keyword --------------------------------
 
-// `__LA_RESTRICT` keyword
+// `LA_RESTRICT` keyword
 #if CPP_VERSION < 202302L // `restrict` was added in C++23
-#  ifndef __LA_RESTRICT
+#  ifndef LA_RESTRICT
 #    ifdef __GNUC__         // GNU
-#      define __LA_RESTRICT __restrict__
+#      define LA_RESTRICT __restrict__
 #    elif defined(_MSC_VER) // MSVC
-#      define __LA_RESTRICT __restrict
+#      define LA_RESTRICT __restrict
 #    else                   // Fallback
-#      define __LA_RESTRICT
+#      define LA_RESTRICT
 #    endif
-#  endif // __LA_RESTRICT
+#  endif // LA_RESTRICT
 #endif // __cplusplus < 202302
+
+#if defined(LA_CXX_17)
+#   define LA_FALLTHROUGH [[fallthrough]]
+#elif defined(__GNUC__) && __GNUC__ >= 7
+#   define LA_FALLTHROUGH __attribute__((fallthrough))
+#else
+#   define LA_FALLTHROUGH ((void)0)
+#endif
 
 // ------------------- Freestanding-friendly Includes -------------------------
 
 #include <stddef.h> // size_t
 #include <stdint.h> // uint32_t
 
-// ------------------------------ Intrin --------------------------------------
-#if defined(_MSC_VER)
-#   include <intrin.h>
-#else
-static inline void cpuid(int info[4], int eax, int ecx) {
-    __asm__ __volatile__(
-        "cpuid"
-        : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3])
-        : "a"(eax), "c"(ecx)
-    );
-}
-#endif // Intrin
-
 // -------------------- Attribute/constexpr defines ---------------------------
 
-#ifdef __LA_CXX_17 // Define `__LA_CXX_17` macro if C++17 or above used
+#ifdef LA_CXX_17 // Define `LA_CXX_17` macro if C++17 or above used
 #   define LA_NO_DISCARD [[nodiscard]]
 #   define LA_CONSTEXPR constexpr
 #   define LA_CONSTEXPR_VAR constexpr
@@ -123,204 +118,51 @@ namespace la {
         typedef struct HINSTANCE__* HINSTANCE;
         typedef char* LPSTR;
 #endif
+        enum class WindowBackend : int {
+            Unknown,
+            X11,
+            WindowsApi,
+            Cocoa,
+            AndroidNdk,
+        }; // enum class WindowBackend
+
+        LA_CONSTEXPR_VAR static WindowBackend
+            WINDOW_BACKEND =
+            // Choose via macros
+#if defined(__linux__)     // Linux
+            WindowBackend::X11;
+#elif defined(_WIN32)      // Windows
+            WindowBackend::WindowsApi;
+#elif defined(__APPLE__)   // Apple
+            WindowBackend::Cocoa;
+#elif defined(__ANDROID__) // Android
+            WindowBackend::AndroidNdk;
+#else                      // Unknown
+            WindowBackend::Unknown;
+#endif
+
+        // Check if `Window Backend` is known at compile-time in C++17 or above
+#ifdef LA_CXX_17
+        static_assert(WINDOW_BACKEND != WindowBackend::Unknown && "Unknown window backend");
+#endif
+
+        // Forward declarations
+        struct Window;
+        struct Framebuffer;
+        struct OpenglContext;
+
+        // Window specialized functions
+
+        void render_software(const ::la::Window&) noexcept;
+        void render_opengl(const ::la::Window&) noexcept;
+        void on_geometry_change(::la::Window&, int w, int h) noexcept;
+
     } // namespace native
 
-    // ---------------------- SIMD system -------------------------------------
 
-struct Simd {
-public:
-    using AddFloat = void (*)(const float* __LA_RESTRICT a, 
-                              const float* __LA_RESTRICT b,
-                              float* __LA_RESTRICT out, 
-                              size_t count);
-    using AddInt32 = void (*)(const int32_t* __LA_RESTRICT a, 
-                              const int32_t* __LA_RESTRICT b,
-                              int32_t* __LA_RESTRICT out,
-                              size_t count);
 
-    using FillFloat = void (*)(float* out, float value, size_t count);
-    using FillInt32 = void (*)(int32_t* out, int32_t value, size_t count);
 
-    // ======= Hardware dependent =======
-    LA_NO_DISCARD static bool has_sse() noexcept;
-    LA_NO_DISCARD static bool has_sse2() noexcept;
-    LA_NO_DISCARD static bool has_avx() noexcept;
-    LA_NO_DISCARD static bool has_avx2() noexcept;
-    LA_NO_DISCARD static bool has_avx512bw() noexcept;
 
-private:
-    AddFloat  m_add_float = nullptr;
-    AddInt32  m_add_int32 = nullptr;
-    FillFloat m_fill_float = nullptr;
-    FillInt32 m_fill_int32 = nullptr;
-
-public:
-    inline Simd() noexcept {
-        bool sse{ has_sse() };
-        bool sse2{ has_sse2() };
-        bool avx{ has_avx() };
-        bool avx2{ has_avx2() };
-
-        m_fill_float = [sse, avx] {
-            if (avx)  return &fill_t<float, 8>::apply;
-            if (sse)  return &fill_t<float, 4>::apply;
-            return           &fill_t<float, 1>::apply;
-        }();
-
-        m_fill_int32 = [sse2, avx2] {
-            if (avx2) return &fill_t<int32_t, 8>::apply;
-            if (sse2) return &fill_t<int32_t, 4>::apply;
-            return           &fill_t<int32_t, 1>::apply;
-        }();
-
-        m_add_float = [sse, avx] {
-            if (avx) return &add_t<float, 8>::apply;
-            if (sse) return &add_t<float, 4>::apply;
-            return          &add_t<float, 1>::apply;
-        }();
-
-        m_add_int32 = [sse2, avx2] {
-            if (avx2) return &add_t<int32_t, 8>::apply;
-            if (sse2) return &add_t<int32_t, 4>::apply;
-            return           &add_t<int32_t, 1>::apply;
-        }();
-    } // Simd()
-
-    // Base template: fallback scalar
-    template<typename T, size_t Width>
-struct add_t {
-    static inline void apply(const T* __LA_RESTRICT a, const T* __LA_RESTRICT b, T* __LA_RESTRICT out, size_t count) noexcept {
-                    for (size_t i = 0; i < count; ++i) out[i] = a[i] + b[i];
-                } // apply
-    }; // struct add_t
-
-    // Specialization for float + SSE
-    template<>
-struct add_t<float, 4> {
-    using reg = __m128;
-
-    static inline void
-    apply(const float* __LA_RESTRICT a, const float* __LA_RESTRICT b, float* __LA_RESTRICT out, size_t count) noexcept {
-                for (size_t i = 0; i < count; i += 4) {
-                    reg va = _mm_loadu_ps(a + i);
-                    reg vb = _mm_loadu_ps(b + i);
-                    reg r = _mm_add_ps(va, vb);
-                    _mm_storeu_ps(out + i, r);
-                }
-            } // apply
-        }; // struct simd_add_t
-
-    // Specialization for float + AVX
-    template<>
-struct add_t<float, 8> {
-    using reg = __m256;
-    
-    static inline void
-    apply(const float* __LA_RESTRICT a, const float* __LA_RESTRICT b, float* __LA_RESTRICT out, size_t count) noexcept {
-                for (size_t i = 0; i < count; i += 8) {
-                    reg va = _mm256_loadu_ps(a + i);
-                    reg vb = _mm256_loadu_ps(b + i);
-                    reg r = _mm256_add_ps(va, vb);
-                    _mm256_storeu_ps(out + i, r);
-                }
-            } // apply
-        }; // struct add_t
-
-    // Specialization for int32 + AVX2
-    template<>
-struct add_t  <int32_t, 8> {
-    using reg = __m256i;
-    
-    static inline void
-    apply(const int32_t* __LA_RESTRICT a, const int32_t* __LA_RESTRICT b, int32_t* __LA_RESTRICT out, size_t count) noexcept {
-                for (size_t i = 0; i < count; i += 8) {
-                    reg va = _mm256_loadu_si256((__m256i*)(a + i));
-                    reg vb = _mm256_loadu_si256((__m256i*)(b + i));
-                    reg r = _mm256_add_epi32(va, vb);
-                    _mm256_storeu_si256((__m256i*)(out + i), r);
-                }
-            } // apply
-        }; // struct simd_add_t
-
-inline void add(const float* __LA_RESTRICT a, const float* __LA_RESTRICT b,
-        float* __LA_RESTRICT out, size_t count) const noexcept { m_add_float(a, b, out, count); }
-
-inline void add(const int32_t* __LA_RESTRICT a, const int32_t* __LA_RESTRICT b,
-        int32_t* __LA_RESTRICT out, size_t count) const noexcept { m_add_int32(a, b, out, count); }
-
-    // ----------------------------- Fill -------------------------------------
-
-    // None: T, Width
-    template<typename T, size_t Width>
-    struct fill_t {
-        static void apply(T* out, T value, size_t count) noexcept {
-            for (size_t i = 0; i < count; ++i)
-                out[i] = value;
-        }
-    }; // None: T, Width
-
-    // SSE2: int32_t, 4
-    template<>
-    struct fill_t<int32_t, 4> {
-        using reg = __m128i;
-    
-        static void apply(int32_t* out, int32_t value, size_t count) noexcept {
-            reg v = _mm_set1_epi32(value);
-            size_t i = 0;
-            for (; i + 4 <= count; i += 4) _mm_storeu_si128((__m128i*)(out + i), v);
-            for (; i < count; ++i) out[i] = value;
-        }
-    }; // SSE2: int32_t, 4
-
-    // SSE: float, 4
-    template<>
-    struct fill_t<float, 4> {
-        using reg = __m128;
-    
-        static void apply(float* out, float value, size_t count) noexcept {
-            reg v = _mm_set1_ps(value);
-            size_t i = 0;
-            for (; i + 4 <= count; i += 4) _mm_storeu_ps(out + i, v);
-            for (; i < count; ++i) out[i] = value;
-        }
-    }; // SSE: float, 4
-
-    // AVX: float, 8
-    template<>
-    struct fill_t<float, 8> {
-        using reg = __m256;
-    
-        static void apply(float* out, float value, size_t count) noexcept {
-            reg v = _mm256_set1_ps(value);
-            size_t i = 0;
-            for (; i + 8 <= count; i += 8) _mm256_storeu_ps(out + i, v);
-            for (; i < count; ++i) out[i] = value;
-        }
-    }; // AVX: float, 8
-
-    // AVX2: int, 8
-    template<>
-    struct fill_t<int32_t, 8> {
-        using reg = __m256i;
-    
-        static void apply(int32_t* out, int32_t value, size_t count) noexcept {
-            reg v = _mm256_set1_epi32(value);
-            size_t i = 0;
-            for (; i + 8 <= count; i += 8) _mm256_storeu_si256((__m256i*)(out + i), v);
-            for (; i < count; ++i) out[i] = value;
-        }
-    }; //  int, 8
-
-    // --------------------- Fill Runtime Dispatch ----------------------------
-
-    inline void fill(float* out, float value, size_t count) const noexcept {
-        m_fill_float(out, value, count);
-    }
-    
-    inline void fill(int32_t* out, int32_t value, size_t count) const noexcept {
-        m_fill_int32(out, value, count);
-    }
-    }; // struct Simd
 
     // --------------------------- Allocate/Free ------------------------------
 
@@ -337,7 +179,7 @@ inline void add(const int32_t* __LA_RESTRICT a, const int32_t* __LA_RESTRICT b,
     // --------------------------- Time ---------------------------------------
 
     void sleep(unsigned ms) noexcept;
-    LA_NO_DISCARD uint32_t get_monotonic_ms() noexcept;
+    LA_NO_DISCARD double get_monotonic_secs() noexcept;
 
 
     // --------------------------- Misc Functions -----------------------------
@@ -348,6 +190,110 @@ inline void add(const int32_t* __LA_RESTRICT a, const int32_t* __LA_RESTRICT b,
     // --------------------------- Input/Output -------------------------------
 
     void print(const char* msg, size_t msg_length) noexcept;
+
+    // ---------------------- SIMD system -------------------------------------
+
+struct Simd {
+public:
+    using AddFloat = void (*)(const float* LA_RESTRICT a, 
+                              const float* LA_RESTRICT b,
+                              float* LA_RESTRICT out, 
+                              size_t count);
+    using AddInt32 = void (*)(const int32_t* LA_RESTRICT a, 
+                              const int32_t* LA_RESTRICT b,
+                              int32_t* LA_RESTRICT out,
+                              size_t count);
+
+    using FillFloat = void (*)(float* out, float value, size_t count);
+    using FillInt32 = void (*)(int32_t* out, int32_t value, size_t count);
+
+    Simd() = delete;
+
+    // ======= Hardware dependent =======
+    LA_NO_DISCARD static bool has_sse() noexcept;
+    LA_NO_DISCARD static bool has_sse2() noexcept;
+    LA_NO_DISCARD static bool has_avx() noexcept;
+    LA_NO_DISCARD static bool has_avx2() noexcept;
+    LA_NO_DISCARD static bool has_avx512bw() noexcept;
+
+    AddFloat static inline choose_add_float(bool sse, bool avx) noexcept {
+        if (avx) return &add_t<float, 8>::apply;
+        if (sse) return &add_t<float, 4>::apply;
+                 return &add_t<float, 1>::apply;
+    }
+
+    AddInt32 static inline choose_add_int32(bool sse2, bool avx2) noexcept {
+        if (avx2) return &add_t<int32_t, 8>::apply;
+        if (sse2) return &add_t<int32_t, 4>::apply;
+                  return &add_t<int32_t, 1>::apply;
+    }
+
+    FillFloat static inline choose_fill_float(bool sse, bool avx) noexcept {
+        if (avx)  return &fill_t<float, 8>::apply;
+        if (sse)  return &fill_t<float, 4>::apply;
+                  return &fill_t<float, 1>::apply;
+    }
+
+    FillInt32 static inline choose_fill_int32(bool sse2, bool avx2) noexcept {
+        if (avx2) return &fill_t<int32_t, 8>::apply;
+        if (sse2) return &fill_t<int32_t, 4>::apply;
+                  return &fill_t<int32_t, 1>::apply;
+    }
+
+    // ----------------------------- Add --------------------------------------
+
+    // Base template: fallback scalar
+    template<typename T, size_t Width> struct add_t {
+        static inline void apply(const T* LA_RESTRICT a, const T* LA_RESTRICT b, T* LA_RESTRICT out, size_t count) noexcept {
+            for (size_t i = 0; i < count; ++i) out[i] = a[i] + b[i];
+        } // apply
+    }; // struct add_t
+
+    // Specialization for float + SSE
+    template<> struct add_t<float, 4> {
+        static void apply(const float* LA_RESTRICT a, const float* LA_RESTRICT b, float* LA_RESTRICT out, size_t count) noexcept;
+    };
+
+    // Specialization for float + AVX
+    template<> struct add_t<float, 8> {
+    static void apply(const float* LA_RESTRICT a, const float* LA_RESTRICT b, float* LA_RESTRICT out, size_t count) noexcept;
+    };
+
+    // Specialization for int32 + AVX2
+    template<> struct add_t<int32_t, 8> {
+        static void apply(const int32_t* LA_RESTRICT a, const int32_t* LA_RESTRICT b, int32_t* LA_RESTRICT out, size_t count) noexcept;
+    };
+
+    // ----------------------------- Fill -------------------------------------
+
+    // None: T, Width
+    template<typename T, size_t Width> struct fill_t {
+        static inline void apply(T* out, T value, size_t count) noexcept {
+            for (size_t i = 0; i < count; ++i) out[i] = value;
+        }
+    };
+
+    // SSE2: int32_t, 4
+    template<> struct fill_t<int32_t, 4> {
+        static void apply(int32_t* out, int32_t value, size_t count) noexcept;
+    };
+
+    // SSE: float, 4
+    template<> struct fill_t<float, 4> {
+        static void apply(float* out, float value, size_t count) noexcept;
+    };
+
+    // AVX: float, 8
+    template<> struct fill_t<float, 8> {
+        static void apply(float* out, float value, size_t count) noexcept;
+    };
+
+    // AVX2: int, 8
+    template<>
+    struct fill_t<int32_t, 8> {
+        static void apply(int32_t* out, int32_t value, size_t count) noexcept;
+    };
+    }; // struct Simd
 
 struct
 Out {
@@ -700,9 +646,10 @@ static const char* what(AboutError error) noexcept {
 
 // ------------------------------- Key ----------------------------------------
 
-enum class KeySpecial {
+enum class Key {
+    __NONE__,
     // --------------------------- FUNCTIONAL ---------------------------
-    F1 = 0, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
     // --------------------------- MODIFIERS ---------------------------
     Shift,
     Control,
@@ -733,21 +680,30 @@ enum class KeySpecial {
     MouseMiddle,
     MouseX1,
     MouseX2,
-    __NONE__,
-    __LAST__,
-    __MAX__ = 64 // do NOT: remove, change. Fixed size enum class.
-}; // enum class KeyS
+    
+    // --------------------------- BASIC ---------------------------
+    Space,
+    _0, _1, _2, _3, _4, _5, _6, _7, _8, _9,
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
 
-enum class Key {
-    _0 = 0, _1, _2, _3, _4, _5, _6, _7, _8, _9,
-    A = 10, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
-    Grave,  // `
-    Hyphen, // -
-    Equal,  // =
-    __NONE__,
-    __LAST__,
-    __MAX__ = 64 // do NOT: remove, change. Fixed size enum class.
+    // --------------------------- ASCII ---------------------------
+    Grave,       // `
+    Hyphen,      // -
+    Equal,       // =
+    BracketLeft, // [
+    BracketRight,// ]
+    Comma,       // ,
+    Period,      // .
+    Slash,
+    Backslash,
+    Semicolon,   // ;
+    Apostrophe,  // '  
+
+    __LAST__
 }; // enum class Key
+
+LA_NO_DISCARD bool is_key_pressed(la::Key) noexcept;
+LA_NO_DISCARD const char* get_key_name(la::Key) noexcept;
 
 // --------------------------- RendererApi ---------------------------
 
@@ -764,7 +720,8 @@ struct IWindowEvents {
     virtual void on_scroll_vertical(float delta) noexcept {}
     virtual void on_resize(int width, int height) noexcept {}
     virtual void on_mouse_move(int x, int y) noexcept {}
-    virtual void on_key_up(KeySpecial, Key) noexcept {}
+    virtual void on_key_down(Key) noexcept {}
+    virtual void on_key_up(Key) noexcept {}
     virtual void on_focus_change(bool gained) noexcept {}
     virtual void on_render_software() noexcept {}
     virtual void on_render_opengl() noexcept {}
@@ -773,49 +730,6 @@ struct IWindowEvents {
         panic_process(what(about), static_cast<int>(about));
     }
 };
-
-namespace
-native {
-    enum class 
-    WindowBackend : int {
-        Unknown,
-        X11,
-        WindowsApi,
-        Cocoa,
-        AndroidNdk,
-    }; // enum class WindowBackend
-
-    LA_CONSTEXPR_VAR static WindowBackend
-    WINDOW_BACKEND =
-// Choose via macros
-#if defined(__linux__)     // Linux
-        WindowBackend::X11;
-#elif defined(_WIN32)      // Windows
-        WindowBackend::WindowsApi;
-#elif defined(__APPLE__)   // Apple
-        WindowBackend::Cocoa;
-#elif defined(__ANDROID__) // Android
-        WindowBackend::AndroidNdk;
-#else                      // Unknown
-        WindowBackend::Unknown;
-#endif
-
-// Check if `Window Backend` is known at compile-time in C++17 or above
-#ifdef __LA_CXX_17
-    static_assert(WINDOW_BACKEND != WindowBackend::Unknown && "Unknown window backend");
-#endif
-
-    // Forward declarations
-    struct Window;
-    struct Framebuffer;
-    struct OpenglContext;
-
-    // Window specialized functions
-
-    void render_software(const ::la::Window&) noexcept;
-    void render_opengl(const ::la::Window&) noexcept;
-    void on_geometry_change(::la::Window&, int w, int h) noexcept;
-} // namespace native
 
 // --------------------------- Native Window ---------------------------
 struct native::Window {
@@ -856,8 +770,8 @@ struct native::Framebuffer {
     LA_NO_DISCARD la::AboutError recreate(
         const la::Window& win, int width, int height) noexcept;
 
-    void clear(const Simd& simd, uint32_t color, int width, int height) noexcept;
-    void draw_pixel(int x, int y, int width, int height, uint32_t color) noexcept;
+    void clear(uint32_t color, int width, int height) const noexcept;
+    void draw_pixel(int x, int y, int width, int height, uint32_t color) const noexcept;
 }; // struct Framebuffer
 
 // --------------------------- Opengl Context ---------------------------
@@ -901,6 +815,9 @@ struct Window {
     void show(bool) const noexcept;
     void quit() const noexcept;
 
+    void swap_buffer_software() const noexcept;
+    void swap_buffer_opengl() const noexcept;
+
     // Getters: render
 
     LA_NO_DISCARD RendererApi renderer_api() const noexcept { return m_renderer_api; }    
@@ -927,6 +844,7 @@ struct Window {
     void set_cursor_visible(bool) const noexcept;
 
 
+
 private:
     IWindowEvents& m_handler;
     Native m_native;
@@ -939,10 +857,6 @@ private:
     
     int m_width;
     int m_height;
-
-    // Internal swap buffers
-    void swap_buffer_software() const noexcept;
-    void swap_buffer_opengl() const noexcept;
 
     friend void native::on_geometry_change(::la::Window&, int w, int h) noexcept;
 }; // struct Window
@@ -961,15 +875,30 @@ inline void Window::render() noexcept {
     case RendererApi::Software:
         m_handler.on_render_software();
         native::render_software(*this);
-        swap_buffer_software();
         break;
     case RendererApi::Opengl:
         m_handler.on_render_opengl();
         native::render_opengl(*this);
-        swap_buffer_opengl();
         break;
     } // switch
 } // render
+
+
+extern Simd::AddFloat  add_float;
+extern Simd::AddInt32  add_int32;
+extern Simd::FillFloat fill_float;
+extern Simd::FillInt32 fill_int32;
+
+struct GlobalInitializer {
+    GlobalInitializer(bool sse, bool sse2, bool avx, bool avx2) noexcept {
+        add_float = Simd::choose_add_float(sse, avx);
+        add_int32 = Simd::choose_add_int32(sse2, avx2);
+        fill_float = Simd::choose_fill_float(sse, avx);
+        fill_int32 = Simd::choose_fill_int32(sse2, avx2);
+    }
+
+    static void init() noexcept;
+}; // struct GlobalInitializer
 
 } // namespace la
 

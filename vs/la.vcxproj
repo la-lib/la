@@ -33,6 +33,14 @@
       <Configuration>ReleaseFreeStanding</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseMiniConsole|Win32">
+      <Configuration>ReleaseMiniConsole</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseMiniConsole|x64">
+      <Configuration>ReleaseMiniConsole</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
     <ProjectConfiguration Include="ReleaseMini_LegacyCXX|Win32">
       <Configuration>ReleaseMini_LegacyCXX</Configuration>
       <Platform>Win32</Platform>
@@ -71,6 +79,7 @@
     <ClCompile Include="..\src\la\la.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\src\la\gl.hpp" />
     <ClInclude Include="..\src\la\la.hpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
@@ -123,6 +132,13 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMini|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMiniConsole|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
@@ -195,6 +211,13 @@
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMiniConsole|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMini_LegacyCXX|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
@@ -237,6 +260,13 @@
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMiniConsole|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMini_LegacyCXX|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
@@ -270,6 +300,9 @@
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMini|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMiniConsole|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMini_LegacyCXX|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
@@ -300,6 +333,9 @@
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMini|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMiniConsole|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMini_LegacyCXX|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
@@ -316,6 +352,9 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMini|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMiniConsole|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMini_LegacyCXX|Win32'" Label="PropertySheets">
@@ -385,6 +424,13 @@
     <ExternalIncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);</ExternalIncludePath>
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMiniConsole|x64'">
+    <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build\obj\la_$(Configuration)\</IntDir>
+    <TargetName>$(ProjectName)_mini</TargetName>
+    <ExternalIncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);</ExternalIncludePath>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMini_LegacyCXX|x64'">
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)build\obj\la_$(Configuration)\</IntDir>
@@ -427,6 +473,13 @@
     <IntDir>$(SolutionDir)build\obj\la_$(Configuration)\</IntDir>
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMiniConsole|Win32'">
+    <TargetName>$(ProjectName)_mini_x86</TargetName>
+    <ExternalIncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);</ExternalIncludePath>
+    <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build\obj\la_$(Configuration)\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMini_LegacyCXX|Win32'">
     <TargetName>$(ProjectName)_mini_x86_legacyCXX</TargetName>
     <ExternalIncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);</ExternalIncludePath>
@@ -448,6 +501,9 @@
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <ErrorReporting>None</ErrorReporting>
       <AdditionalOptions> /utf-8 </AdditionalOptions>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <OmitFramePointers>false</OmitFramePointers>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -493,6 +549,9 @@
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <ErrorReporting>None</ErrorReporting>
       <AdditionalOptions> /utf-8 </AdditionalOptions>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <OmitFramePointers>false</OmitFramePointers>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -538,6 +597,8 @@
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <ErrorReporting>None</ErrorReporting>
       <AdditionalOptions> /utf-8 </AdditionalOptions>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -583,6 +644,8 @@
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <ErrorReporting>None</ErrorReporting>
       <AdditionalOptions> /utf-8 </AdditionalOptions>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -873,6 +936,66 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <AdditionalDependencies>kernel32.lib; user32.lib; gdi32.lib; opengl32.lib;</AdditionalDependencies>
+      <ProgramDatabaseFile>$(OutDir)\obj\$(Configuration)_x64\$(TargetName).pdb</ProgramDatabaseFile>
+      <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
+      <EntryPointSymbol>WinMain</EntryPointSymbol>
+      <AdditionalLibraryDirectories>
+      </AdditionalLibraryDirectories>
+      <Version>
+      </Version>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <AdditionalOptions>/NODEFAULTLIB /MERGE:.rdata=.text /MERGE:.data=.text
+ /ALIGN:32 %(AdditionalOptions)</AdditionalOptions>
+      <SectionAlignment>32</SectionAlignment>
+      <GenerateMapFile>false</GenerateMapFile>
+      <HeapReserveSize>0</HeapReserveSize>
+      <StackReserveSize>0</StackReserveSize>
+      <HeapCommitSize>0</HeapCommitSize>
+      <StackCommitSize>0</StackCommitSize>
+      <MergeSections>
+      </MergeSections>
+    </Link>
+    <PreBuildEvent>
+      <Command>
+      </Command>
+    </PreBuildEvent>
+    <CustomBuildStep>
+      <Command>
+      </Command>
+    </CustomBuildStep>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMiniConsole|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>false</IntrinsicFunctions>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>LA_NOSTD;_CONSOLE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard_C>Default</LanguageStandard_C>
+      <Optimization>MinSpace</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <AdditionalOptions>/Zc:threadSafeInit- /utf-8 /Oi-</AdditionalOptions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <ExceptionHandling>false</ExceptionHandling>
+      <OmitFramePointers>true</OmitFramePointers>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <ErrorReporting>None</ErrorReporting>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>false</GenerateDebugInformation>
@@ -1234,6 +1357,72 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <AdditionalDependencies>kernel32.lib; user32.lib; gdi32.lib; opengl32.lib;</AdditionalDependencies>
+      <ProgramDatabaseFile>$(OutDir)\obj\$(Configuration)_x86\$(TargetName).pdb</ProgramDatabaseFile>
+      <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
+      <EntryPointSymbol>WinMain</EntryPointSymbol>
+      <AdditionalLibraryDirectories>
+      </AdditionalLibraryDirectories>
+      <Version>
+      </Version>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <AdditionalOptions>/NODEFAULTLIB  /MERGE:.rdata=.text /MERGE:.data=.text
+ /ALIGN:32 %(AdditionalOptions)</AdditionalOptions>
+      <SectionAlignment>32</SectionAlignment>
+      <GenerateMapFile>false</GenerateMapFile>
+      <HeapReserveSize>0</HeapReserveSize>
+      <StackReserveSize>0</StackReserveSize>
+      <HeapCommitSize>0</HeapCommitSize>
+      <StackCommitSize>0</StackCommitSize>
+      <MergeSections>
+      </MergeSections>
+    </Link>
+    <PreBuildEvent>
+      <Command>
+      </Command>
+    </PreBuildEvent>
+    <CustomBuildStep>
+      <Command>
+      </Command>
+    </CustomBuildStep>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseMiniConsole|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>false</IntrinsicFunctions>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>LA_NOSTD;_CONSOLE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard_C>Default</LanguageStandard_C>
+      <Optimization>MinSpace</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <AdditionalOptions>/GR- /Zc:threadSafeInit- /utf-8 /Zl /Oi-</AdditionalOptions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <ExceptionHandling>false</ExceptionHandling>
+      <OmitFramePointers>true</OmitFramePointers>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <CallingConvention>StdCall</CallingConvention>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <ControlFlowGuard>false</ControlFlowGuard>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <EnableEnhancedInstructionSet>StreamingSIMDExtensions</EnableEnhancedInstructionSet>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <CreateHotpatchableImage>false</CreateHotpatchableImage>
+      <ErrorReporting>None</ErrorReporting>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>false</GenerateDebugInformation>

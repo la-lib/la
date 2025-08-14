@@ -24,37 +24,270 @@ extern "C" void* __cdecl memset(void* dest, int ch, size_t count) {
 #include <Psapi.h> // psapi.lib
 #include <gl/GL.h>
 
+// ------------------------------ Intrin --------------------------------------
+#if defined(_MSC_VER)
+#   include <intrin.h>
+#else
+static inline void cpuid(int info[4], int eax, int ecx) {
+    __asm__ __volatile__(
+        "cpuid"
+        : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3])
+        : "a"(eax), "c"(ecx)
+    );
+}
+#endif // Intrin
+
+
 // ------------------------------ Global Variables ----------------------------
-LA_CONSTEXPR_VAR wchar_t WINDOW_CLASSNAME[]{ L"_" };
+LA_CONSTEXPR_VAR wchar_t WINDOW_CLASSNAME[] { L"_" };
 LA_CONSTEXPR_VAR LPCSTR DUMMY_CLASS_NAME{ "d" };
 LA_CONSTEXPR_VAR unsigned DRAW_COLOR_MODE = 4; // ARGB
 
-LA_CONSTEXPR_VAR unsigned char KEY_SPECIAL_ARRAY_SIZE = static_cast<unsigned char>(la::KeySpecial::__LAST__);
-LA_CONSTEXPR_VAR unsigned char KEY_ARRAY_SIZE = static_cast<unsigned char>(la::Key::__LAST__);
-unsigned char key_special_array[KEY_SPECIAL_ARRAY_SIZE]{ 0 };
-unsigned char key_general_array[KEY_ARRAY_SIZE]{ 0 };
+LA_CONSTEXPR_VAR unsigned char KEY_ARRAY_SIZE = static_cast<unsigned char>(::la::Key::__LAST__);
+unsigned char key_array[KEY_ARRAY_SIZE]{ 0 };
 
 namespace la {
+    Simd::AddFloat  add_float = nullptr;
+    Simd::AddInt32  add_int32 = nullptr;
+    Simd::FillFloat fill_float = nullptr;
+    Simd::FillInt32 fill_int32 = nullptr;
+
+    void GlobalInitializer::init() noexcept {
+        volatile GlobalInitializer g {
+            Simd::has_sse(),
+            Simd::has_sse2(),
+            Simd::has_avx(),
+            Simd::has_avx2()
+        };
+    }
+
+    
+// --------------------------------- SIMD -------------------------------------
+
+    namespace detail {
+        template<typename T>
+        inline size_t align_prologue(T*& out, size_t& count, size_t align_bytes, const T value) noexcept {
+            // Align "out" upward to align_bytes by writing a small scalar prologue.
+            const uintptr_t addr = reinterpret_cast<uintptr_t>(out);
+            const size_t mis = (size_t)((-(intptr_t)addr) & (align_bytes - 1));
+            const size_t elems = count < mis / sizeof(T) ? 
+                                 count : mis / sizeof(T);
+            for (size_t k = 0; k < elems; ++k) out[k] = value;
+            out += elems;
+            count -= elems;
+            return elems; // number of elements written in prologue
+        } // align_prologue
+
+        template<typename T>
+        inline void scalar_tail_unrolled(T* out, const T value, size_t rem) noexcept {
+            switch (rem) {
+            case 15: out[14] = value; LA_FALLTHROUGH;
+            case 14: out[13] = value; LA_FALLTHROUGH;
+            case 13: out[12] = value; LA_FALLTHROUGH;
+            case 12: out[11] = value; LA_FALLTHROUGH;
+            case 11: out[10] = value; LA_FALLTHROUGH;
+            case 10: out[9] = value; LA_FALLTHROUGH;
+            case 9:  out[8] = value; LA_FALLTHROUGH;
+            case 8:  out[7] = value; LA_FALLTHROUGH;
+            case 7:  out[6] = value; LA_FALLTHROUGH;
+            case 6:  out[5] = value; LA_FALLTHROUGH;
+            case 5:  out[4] = value; LA_FALLTHROUGH;
+            case 4:  out[3] = value; LA_FALLTHROUGH;
+            case 3:  out[2] = value; LA_FALLTHROUGH;
+            case 2:  out[1] = value; LA_FALLTHROUGH;
+            case 1:  out[0] = value; LA_FALLTHROUGH;
+            default: break;
+            }
+        } // scalar_tail_unrolled
+    } // namespace detail
+
+    // ----------------------------- Add --------------------------------------
+
+    // Specialization for float + SSE
+    void Simd::add_t<float, 4>::apply(const float* LA_RESTRICT a,
+                                     const float* LA_RESTRICT b, 
+                             float* LA_RESTRICT out, size_t count) noexcept {
+        using reg = __m128;
+        for (size_t i = 0; i < count; i += 4) {
+            reg av = _mm_loadu_ps(a + i);
+            reg bv = _mm_loadu_ps(b + i);
+            reg r = _mm_add_ps(av, bv);
+            _mm_storeu_ps(out + i, r);
+        }
+    } // float + SSE
+
+    // Specialization for float + AVX
+    void Simd::add_t<float, 8>::apply(const float* LA_RESTRICT a,
+                                      const float* LA_RESTRICT b,
+                             float* LA_RESTRICT out, size_t count) noexcept {
+        using reg = __m256;
+        for (size_t i = 0; i < count; i += 8) {
+            reg av = _mm256_loadu_ps(a + i);
+            reg bv = _mm256_loadu_ps(b + i);
+            reg r = _mm256_add_ps(av, bv);
+            _mm256_storeu_ps(out + i, r);
+        }
+    } // float + AVX
+
+    // Specialization for int32 + AVX2
+    void Simd::add_t<int32_t, 8>::apply(const int32_t* LA_RESTRICT a,
+                                        const int32_t* LA_RESTRICT b,
+                           int32_t* LA_RESTRICT out, size_t count) noexcept {
+        using reg = __m256i;
+        for (size_t i = 0; i < count; i += 8) {
+            reg av = _mm256_loadu_si256((__m256i*)(a + i));
+            reg bv = _mm256_loadu_si256((__m256i*)(b + i));
+            reg r = _mm256_add_epi32(av, bv);
+            _mm256_storeu_si256((__m256i*)(out + i), r);
+        }
+    } // int32 + AVX2
+
+    // ----------------------------- Fill -------------------------------------
+
+    // SSE2: int32_t, 4
+    void Simd::fill_t<int32_t, 4>::apply(int32_t* out, int32_t value, size_t count) noexcept {
+        if (count == 0) return;
+
+        using reg = __m128i;
+        reg v = _mm_set1_epi32(value);
+
+        // Try to use aligned stores by aligning the pointer with a small scalar prologue.
+        size_t wrote = detail::align_prologue(out, count, /*align_bytes=*/16, value);
+        (void)wrote;
+
+        // Unrolled SIMD loop: 4 * 4 = 16 ints per iteration
+        const size_t V = 4;      // elements per SSE register for int32
+        const size_t U = 4;      // unroll factor
+        const size_t BLOCK = V * U; // 16
+
+        size_t i = 0;
+        // Prefetch distance (in elements). ~512 bytes ahead as a starting point.
+        const size_t PF = 512 / sizeof(int32_t);
+
+        // Use aligned stores now that out is 16B-aligned
+        for (; i + BLOCK <= count; i += BLOCK) {
+            _mm_prefetch((const char*)(out + i + PF), _MM_HINT_T0);
+            _mm_store_si128((__m128i*)(out + i + 0 * V), v);
+            _mm_store_si128((__m128i*)(out + i + 1 * V), v);
+            _mm_store_si128((__m128i*)(out + i + 2 * V), v);
+            _mm_store_si128((__m128i*)(out + i + 3 * V), v);
+        }
+
+        // Vector cleanup (still aligned stores), then scalar tail-unrolled
+        for (; i + V <= count; i += V)
+            _mm_store_si128((__m128i*)(out + i), v);
+
+        detail::scalar_tail_unrolled(out + i, value, count - i);
+    } // SSE2: int32_t, 4
+
+    // SSE: float, 4
+    void Simd::fill_t<float, 4>::apply(float* out, float value, size_t count) noexcept {
+        if (count == 0) return;
+
+        using reg = __m128;
+        reg v = _mm_set1_ps(value);
+
+        size_t wrote = detail::align_prologue(out, count, /*align_bytes=*/16, value);
+        (void)wrote;
+
+        const size_t V = 4;      // floats per SSE reg
+        const size_t U = 4;      // unroll
+        const size_t BLOCK = V * U; // 16
+        size_t i = 0;
+        const size_t PF = 512 / sizeof(float);
+
+        for (; i + BLOCK <= count; i += BLOCK) {
+            _mm_prefetch((const char*)(out + i + PF), _MM_HINT_T0);
+            _mm_store_ps(out + i + 0 * V, v);
+            _mm_store_ps(out + i + 1 * V, v);
+            _mm_store_ps(out + i + 2 * V, v);
+            _mm_store_ps(out + i + 3 * V, v);
+        }
+        for (; i + V <= count; i += V) {
+            _mm_store_ps(out + i, v);
+        }
+        detail::scalar_tail_unrolled(out + i, value, count - i);
+    }; // SSE: float, 4
+
+    // AVX: float, 8
+    void Simd::fill_t<float, 8>::apply(float* out, float value, size_t count) noexcept {
+        if (count == 0) return;
+
+        using reg = __m256;
+        reg v = _mm256_set1_ps(value);
+
+        // Align to 32 bytes for AVX aligned stores
+        size_t wrote = detail::align_prologue(out, count, /*align_bytes=*/32, value);
+        (void)wrote;
+
+        const size_t V = 8;      // floats per AVX reg
+        const size_t U = 4;      // unroll
+        const size_t BLOCK = V * U; // 32
+        size_t i = 0;
+        const size_t PF = 512 / sizeof(float);
+
+        for (; i + BLOCK <= count; i += BLOCK) {
+            _mm_prefetch((const char*)(out + i + PF), _MM_HINT_T0);
+            _mm256_store_ps(out + i + 0 * V, v);
+            _mm256_store_ps(out + i + 1 * V, v);
+            _mm256_store_ps(out + i + 2 * V, v);
+            _mm256_store_ps(out + i + 3 * V, v);
+        }
+        for (; i + V <= count; i += V) {
+            _mm256_store_ps(out + i, v);
+        }
+        detail::scalar_tail_unrolled(out + i, value, count - i);
+    } // AVX: float, 8
+
+    // AVX2: int, 8
+    void Simd::fill_t<int32_t, 8>::apply(int32_t* out, int32_t value, size_t count) noexcept {
+        if (count == 0) return;
+
+        using reg = __m256i;
+        reg v = _mm256_set1_epi32(value);
+
+        size_t wrote = detail::align_prologue(out, count, /*align_bytes=*/32, value);
+        (void)wrote;
+
+        const size_t V = 8;      // ints per AVX2 reg
+        const size_t U = 4;      // unroll
+        const size_t BLOCK = V * U; // 32
+        size_t i = 0;
+        const size_t PF = 512 / sizeof(int32_t);
+
+        for (; i + BLOCK <= count; i += BLOCK) {
+            _mm_prefetch((const char*)(out + i + PF), _MM_HINT_T0);
+            _mm256_store_si256((__m256i*)(out + i + 0 * V), v);
+            _mm256_store_si256((__m256i*)(out + i + 1 * V), v);
+            _mm256_store_si256((__m256i*)(out + i + 2 * V), v);
+            _mm256_store_si256((__m256i*)(out + i + 3 * V), v);
+        }
+        for (; i + V <= count; i += V) {
+            _mm256_store_si256((__m256i*)(out + i), v);
+        }
+        detail::scalar_tail_unrolled(out + i, value, count - i);
+    } // AVX2: int, 8
+} // namespace la
+
 // ---------------------------- Native Declarations ---------------------------
 
-    LA_NO_DISCARD AboutError
-        create_gl_context(HDC main_dc) noexcept;
+    LA_NO_DISCARD ::la::AboutError
+create_gl_context(HDC main_dc) noexcept;
 
     static LRESULT CALLBACK
-        win_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) noexcept;
-} // namespace la
+win_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) noexcept;
 
 // ------------------------ Hacks for freestanding mode -----------------------
 
 #if defined(LA_NOSTD) && defined(_MSC_VER) // Hacks for MSVC
 extern "C" int _fltused = 0;
 void __cdecl operator delete(void* ptr, unsigned int size) {
-    la::panic_process(la::what(la::AboutError::Win32_Freestanding_DeleteOperatorCalled), -1);
+    ::la::panic_process(::la::what(::la::AboutError::Win32_Freestanding_DeleteOperatorCalled), -1);
 }
 
 #if defined(_M_X64) || defined(_M_ARM64) // Exclusive for 64-bit targets
 void __cdecl operator delete(void* ptr, size_t size) {
-    la::panic_process(la::what(la::AboutError::Win32_Freestanding_DeleteOperatorCalled), -1);
+    ::la::panic_process(::la::what(::la::AboutError::Win32_Freestanding_DeleteOperatorCalled), -1);
 }
 #endif // 64-bit
 #endif // LA_NOSTD && _MSC_VER
@@ -124,30 +357,33 @@ typedef BOOL(WINAPI* PFNWGLCHOOSEPIXELFORMATARBPROC)(
 // Swap interval (V-Sync)
 typedef BOOL(WINAPI* PFNWGLSWAPINTERVALEXTPROC)(int interval);
 
-LA_CONSTEXPR_VAR int PIXEL_ATTRS[]{ arb.DRAW_TO_WINDOW, GL_TRUE,
-                                      arb.SUPPORT_OPENGL, GL_TRUE,
-                                      arb.DOUBLE_BUFFER,  GL_TRUE,
-                                      arb.PIXEL_TYPE,     arb.TYPE_RGBA,
-                                      arb.COLOR_BITS,     32,
-                                      arb.DEPTH_BITS,     24,
-                                      arb.STENCIL_BITS,   8,
-                                      0 /* The end of the array */ };
+LA_CONSTEXPR_VAR int PIXEL_ATTRS [] {
+                        arb.DRAW_TO_WINDOW, GL_TRUE,
+                        arb.SUPPORT_OPENGL, GL_TRUE,
+                        arb.DOUBLE_BUFFER,  GL_TRUE,
+                        arb.PIXEL_TYPE,     arb.TYPE_RGBA,
+                        arb.COLOR_BITS,     32,
+                        arb.DEPTH_BITS,     24,
+                        arb.STENCIL_BITS,   8,
+                        0 /* The end of the array */ };
 
-LA_CONSTEXPR_VAR int CONTEXT_ATTRS[]{ arb.CONTEXT_MAJOR_VERSION, 3,
-                                        arb.CONTEXT_MINOR_VERSION, 3,
-                                        arb.CONTEXT_PROFILE_MASK,  arb.CONTEXT_CORE_PROFILE_BIT,
-                                        0 /* The end of the array */ };
+LA_CONSTEXPR_VAR int CONTEXT_ATTRS [] {
+                        arb.CONTEXT_MAJOR_VERSION, 3,
+                        arb.CONTEXT_MINOR_VERSION, 3,
+                        arb.CONTEXT_PROFILE_MASK,  arb.CONTEXT_CORE_PROFILE_BIT,
+                        0 /* The end of the array */ };
 
-LA_CONSTEXPR_VAR PIXELFORMATDESCRIPTOR PF_DESCRIPTOR{ /* nSize    */ sizeof(PF_DESCRIPTOR),
-                                                        /* nVersion */ 1,
-                                                        /* dwFlags  */ PFD_DRAW_TO_WINDOW
-                                                                     | PFD_SUPPORT_OPENGL
-                                                                     | PFD_DOUBLEBUFFER,
-                                                        /* iPixelType   */ PFD_TYPE_RGBA,
-                                                        /* cColorBits   */ 32,
-                                                        /* cDepthBits   */ 24,
-                                                        /* cStencilBits */ 8,
-                                                        /* iLayerType   */ PFD_MAIN_PLANE };
+LA_CONSTEXPR_VAR PIXELFORMATDESCRIPTOR PF_DESCRIPTOR{
+                        /* nSize    */ sizeof(PF_DESCRIPTOR),
+                        /* nVersion */ 1,
+                        /* dwFlags  */ PFD_DRAW_TO_WINDOW
+                                     | PFD_SUPPORT_OPENGL
+                                     | PFD_DOUBLEBUFFER,
+                        /* iPixelType   */ PFD_TYPE_RGBA,
+                        /* cColorBits   */ 32,
+                        /* cDepthBits   */ 24,
+                        /* cStencilBits */ 8,
+                        /* iLayerType   */ PFD_MAIN_PLANE };
 } // namespace wingl
 
 
@@ -313,8 +549,8 @@ exit_process(int error_code) noexcept { ExitProcess(error_code); }
 
 void
 panic_process(const char* explain_msg, int error_code) noexcept {
-    la::Out out;
-    out << explain_msg << la::endl;
+    ::la::Out out;
+    out << explain_msg << ::la::endl;
     MessageBoxA(nullptr, explain_msg, "Error", MB_OK | MB_ICONERROR);
     exit_process(error_code);
 } // panic_process_explained
@@ -324,11 +560,18 @@ panic_process(const char* explain_msg, int error_code) noexcept {
 void
 sleep(unsigned ms) noexcept { Sleep(ms); }
 
-#pragma warning(push)
-#pragma warning(disable:28159)
-uint32_t
-get_monotonic_ms() noexcept { return GetTickCount(); }
-#pragma warning(pop)
+double get_monotonic_secs() noexcept {
+    static LARGE_INTEGER frequency = [] {
+        LARGE_INTEGER freq;
+        QueryPerformanceFrequency(&freq);
+        return freq;
+    }();
+
+    LARGE_INTEGER counter;
+    QueryPerformanceCounter(&counter);
+
+    return static_cast<double>(counter.QuadPart) / static_cast<double>(frequency.QuadPart);
+}
 
 // --------------------------- Misc Functions ---------------------------
 
@@ -394,13 +637,14 @@ native::Window::
 
 // --------------------------- Native Framebuffer ---------------------------
 void native::Framebuffer::
-clear(const Simd& simd, uint32_t color, int width, int height) noexcept {
+clear(uint32_t color, int win_width, int win_height) const noexcept {
     if (!pixels) return;
 
-    const size_t pixel_count = width * height;
-    simd.fill(reinterpret_cast<int32_t*>(pixels), 
-              static_cast<int32_t>(color), 
-                                  pixel_count);
+    const size_t pixel_count = win_width * win_height;
+    int32_t* out = reinterpret_cast<int32_t*>(pixels);
+    int32_t fill = static_cast<int32_t>(color);
+
+    ::la::fill_int32(out, fill, pixel_count); // Using the best found SIMD
 } // clear
 
 native::Framebuffer::
@@ -412,9 +656,9 @@ native::Framebuffer::
 #endif
 } // ~Framebuffer
 
-LA_NO_DISCARD la::AboutError native::Framebuffer::
+LA_NO_DISCARD ::la::AboutError native::Framebuffer::
 recreate(
-    const la::Window& win, int width_, int height_) noexcept {
+    const ::la::Window& win, int width_, int height_) noexcept {
 
     // Free old resources
     if (bmp) {
@@ -428,18 +672,18 @@ recreate(
 
     // Reject invalid dimensions
     if (width_ <= 0 || height_ <= 0)
-        return la::AboutError::None; // Exit without recreating
+        return ::la::AboutError::None; // Exit without recreating
 
     // Create compatible DC
     HDC device = GetDC(reinterpret_cast<HWND>(win.native().hwnd));
     if (!device)
-        return la::AboutError::Win32_GetCurrentDC;
+        return ::la::AboutError::Win32_GetCurrentDC;
 
     hdc = CreateCompatibleDC(device);
     ReleaseDC(reinterpret_cast<HWND>(win.native().hwnd), device);
 
     if (!hdc)
-        return la::AboutError::Win32_CreateCompatibleDc;
+        return ::la::AboutError::Win32_CreateCompatibleDc;
 
     // Prepare bitmap info (top-down DIB)
     BITMAPINFO bmi{};
@@ -455,19 +699,19 @@ recreate(
                            &bmi, DIB_RGB_COLORS, &ppv_bits, nullptr, 0);
     // Check `bitmap` && `received pixel buffer`
     if (!bmp || !ppv_bits)
-        return la::AboutError::Win32_CreateDibSection;
+        return ::la::AboutError::Win32_CreateDibSection;
 
     // Check selected object
     if (!SelectObject(reinterpret_cast<HDC>(hdc), 
                       reinterpret_cast<HBITMAP>(bmp)))
-        return la::AboutError::Win32_SelectObject;
+        return ::la::AboutError::Win32_SelectObject;
 
     pixels = ppv_bits;
-    return la::AboutError::None;
+    return ::la::AboutError::None;
 } // recreate
 
 void native::Framebuffer::
-draw_pixel(int x, int y, int width, int height, uint32_t color) noexcept {
+draw_pixel(int x, int y, int width, int height, uint32_t color) const noexcept {
     // Defensive: don't draw out of bounds
     if (x < 0 || x >= width || y < 0 || y >= height || !pixels)
         return;
@@ -502,7 +746,7 @@ native::OpenglContext::
 // --------------------------- Window Specialized ---------------------------
 
 void native::
-render_software(const la::Window& win) noexcept {
+render_software(const ::la::Window& win) noexcept {
     HWND hwnd = reinterpret_cast<HWND>(win.native().hwnd);
     PAINTSTRUCT ps;
     BeginPaint(hwnd, &ps);
@@ -518,16 +762,16 @@ render_software(const la::Window& win) noexcept {
     EndPaint(hwnd, &ps);
 } // native::render_software
 
-void native::
-render_opengl(const la::Window& win) noexcept {
+    void native::
+render_opengl(const ::la::Window& win) noexcept {
     HWND hwnd = reinterpret_cast<HWND>(win.native().hwnd);
     PAINTSTRUCT ps;
     BeginPaint(hwnd, &ps);
     EndPaint(hwnd, &ps);
 } // native::render_opengl
 
-void native::
-on_geometry_change(la::Window& win, int w, int h) noexcept {
+    void native::
+on_geometry_change(::la::Window& win, int w, int h) noexcept {
     win.m_width = w;
     win.m_height = h;
 
@@ -544,7 +788,7 @@ on_geometry_change(la::Window& win, int w, int h) noexcept {
     } // software
 
     case RendererApi::Opengl: {
-        la::sleep(7); // hack
+        ::la::sleep(7); // hack
         error = Error::CreateOpenglContext;
         about = create_gl_context(reinterpret_cast<HDC>(win.native().hdc));
 
@@ -617,8 +861,13 @@ Window(IWindowEvents& handler, int w, int h,
         /* dwExStyle    */ 0,
         /* lpClassName  */ WINDOW_CLASSNAME,
         /* lpWindowName */ WINDOW_CLASSNAME,
-        /* dwStyle      */ (bordless ? WS_POPUP : WS_OVERLAPPEDWINDOW)
-                            | (shown ? WS_VISIBLE : 0),
+        /* dwStyle      */ bordless ? WS_POPUP : WS_OVERLAPPED  |
+                                                 WS_CAPTION     |
+                                                 WS_SYSMENU     |
+                                                 WS_THICKFRAME  |
+                                                 WS_MINIMIZEBOX |
+                                                 WS_MAXIMIZEBOX |
+                                                 (shown ? WS_VISIBLE : 0),
         /* x            */ CW_USEDEFAULT,
         /* y            */ CW_USEDEFAULT,
         /* width        */ w,
@@ -771,10 +1020,110 @@ set_fullscreen(bool value) const noexcept {
     }
 } // set_fullscreen
 
+// ------------------------------- Key ----------------------------------------
+
+LA_NO_DISCARD bool is_pressed(Key k) noexcept { return key_array[static_cast<unsigned int>(k)]; }
+
+LA_NO_DISCARD const char* get_key_name(Key k) noexcept {
+    using K = Key;
+    switch (k)
+    {
+    case K::F1:  return "f1";
+    case K::F2:  return "f2";
+    case K::F3:  return "f3";
+    case K::F4:  return "f4";
+    case K::F5:  return "f5";
+    case K::F6:  return "f6";
+    case K::F7:  return "f7";
+    case K::F8:  return "f8";
+    case K::F9:  return "f9";
+    case K::F10: return "f10";
+    case K::F11: return "f11";
+    case K::F12: return "f12";
+    case K::Shift:      return "shift";
+    case K::Control:    return "control";
+    case K::Alt:        return "alt";
+    case K::Super:      return "super";
+    case K::Escape:     return "escape";
+    case K::Insert:     return "insert";
+    case K::Delete:     return "delete";
+    case K::Backspace:  return "backspace";
+    case K::Tab:        return "tab";
+    case K::Return:     return "return";
+    case K::ScrollLock: return "scroll lock";
+    case K::NumLock:    return "num lock";
+    case K::CapsLock:   return "caps lock";
+    case K::Home:       return "home";
+    case K::End:        return "end";
+    case K::PageUp:     return "page up";
+    case K::PageDown:   return "page down";
+    case K::Left:       return "left";
+    case K::Up:         return "up";
+    case K::Right:      return "right";
+    case K::Down:       return "down";
+    case K::MouseLeft:  return "LMB";
+    case K::MouseRight: return "RMB";
+    case K::MouseMiddle: return "middle mouse";
+    case K::MouseX1:    return "x1 MB";
+    case K::MouseX2:    return "x2 MB";
+    case K::_0: return "0";
+    case K::_1: return "1";
+    case K::_2: return "2";
+    case K::_3: return "3";
+    case K::_4: return "4";
+    case K::_5: return "5";
+    case K::_6: return "6";
+    case K::_7: return "7";
+    case K::_8: return "8";
+    case K::_9: return "9";
+    case K::A: return "a";
+    case K::B: return "b";
+    case K::C: return "c";
+    case K::D: return "d";
+    case K::E: return "e";
+    case K::F: return "f";
+    case K::G: return "g";
+    case K::H: return "h";
+    case K::I: return "i";
+    case K::J: return "j";
+    case K::K: return "k";
+    case K::L: return "l";
+    case K::M: return "m";
+    case K::N: return "n";
+    case K::O: return "o";
+    case K::P: return "p";
+    case K::Q: return "q";
+    case K::R: return "r";
+    case K::S: return "s";
+    case K::T: return "t";
+    case K::U: return "u";
+    case K::V: return "v";
+    case K::W: return "w";
+    case K::X: return "x";
+    case K::Y: return "y";
+    case K::Z: return "z";
+    case K::Grave:      return "`";
+    case K::Hyphen:     return "-";
+    case K::Equal:      return "=";
+    case K::BracketLeft:    return "[";
+    case K::BracketRight:   return "]";
+    case K::Comma:  return ",";
+    case K::Period: return ".";
+    case K::Slash:  return "/";
+    case K::Backslash:  return "\\";
+    case K::Semicolon:  return ";";
+    case K::Apostrophe: return "'";
+    default:            return "unknown";
+    }
+}
+
+} // namespace la
+
+
 
 // --------------------------- Create Opengl Context --------------------------
 
-LA_NO_DISCARD AboutError
+LA_NO_DISCARD ::la::AboutError
 create_gl_context(HDC main_dc) noexcept {
     wingl::PFNWGLCHOOSEPIXELFORMATARBPROC    
         wglChoosePixelFormatARB = nullptr;
@@ -790,18 +1139,18 @@ create_gl_context(HDC main_dc) noexcept {
     if (!dummy.ctx()) {
 
         // 1.1 Dummy window
-        if (!dummy.histance()) return AboutError::Win32_Dummy_WindowClass;
-        if (!dummy.hwnd())     return AboutError::Win32_Dummy_Window;
-        if (!dummy.hdc())      return AboutError::Win32_Dummy_WindowDc;
+        if (!dummy.histance()) return ::la::AboutError::Win32_Dummy_WindowClass;
+        if (!dummy.hwnd())     return ::la::AboutError::Win32_Dummy_Window;
+        if (!dummy.hdc())      return ::la::AboutError::Win32_Dummy_WindowDc;
 
         // 1.2. Dummy context for loading WGL extensions
         { // Choose and set pixel format
             int format = ChoosePixelFormat(dummy.hdc(), &wingl::PF_DESCRIPTOR);
             if (format == 0)
-                return AboutError::Win32_Dummy_ChoosePixelFormat;
+                return ::la::AboutError::Win32_Dummy_ChoosePixelFormat;
 
             if (!SetPixelFormat(dummy.hdc(), format, &wingl::PF_DESCRIPTOR))
-                return AboutError::Win32_Dummy_SetPixelFormat;
+                return ::la::AboutError::Win32_Dummy_SetPixelFormat;
         }
 
         // 1.3. Load WGL extensions
@@ -809,7 +1158,7 @@ create_gl_context(HDC main_dc) noexcept {
         dummy.set_ctx(wglCreateContext(dummy.hdc()));
 
         if (!wglMakeCurrent(dummy.hdc(), dummy.ctx()))
-            return AboutError::Win32_Dummy_CreateContext;
+            return ::la::AboutError::Win32_Dummy_CreateContext;
 
         // wgl functions
         wglChoosePixelFormatARB =
@@ -822,8 +1171,8 @@ create_gl_context(HDC main_dc) noexcept {
         // Loaded wgl functions
     } // if (!dummy.ctx())
 
-    if (!wglChoosePixelFormatARB) return AboutError::Win32_Missing_ChoosePixelFormatARB;
-    if (!wglCreateContextAttribsARB) return AboutError::Win32_Missing_CreateContextAttribsARB;
+    if (!wglChoosePixelFormatARB) return ::la::AboutError::Win32_Missing_ChoosePixelFormatARB;
+    if (!wglCreateContextAttribsARB) return ::la::AboutError::Win32_Missing_CreateContextAttribsARB;
 
     // 3. Set modern pixel format for the main window
     { // Choose and set pixel format using ARB
@@ -832,14 +1181,14 @@ create_gl_context(HDC main_dc) noexcept {
         BOOL success = wglChoosePixelFormatARB(
             main_dc, wingl::PIXEL_ATTRS, nullptr, 1, &format, &num_format);
         
-        if (!success || num_format == 0 || format == 0)              return AboutError::Win32_ChoosePixelFormatARB;
-        if (!SetPixelFormat(main_dc, format, &wingl::PF_DESCRIPTOR)) return AboutError::Win32_SetPixelFormat;
+        if (!success || num_format == 0 || format == 0)              return ::la::AboutError::Win32_ChoosePixelFormatARB;
+        if (!SetPixelFormat(main_dc, format, &wingl::PF_DESCRIPTOR)) return ::la::AboutError::Win32_SetPixelFormat;
     } // Choosed pixel format for main DC
 
     // 4. Create OpenGL 3.3 Core Profile context
     HGLRC gl_context = wglCreateContextAttribsARB(main_dc, nullptr, wingl::CONTEXT_ATTRS);
-    if (!gl_context)                          return AboutError::Win32_CreateContextAttribsARB;
-    if (!wglMakeCurrent(main_dc, gl_context)) return AboutError::Win32_CreateModernContext;
+    if (!gl_context)                          return ::la::AboutError::Win32_CreateContextAttribsARB;
+    if (!wglMakeCurrent(main_dc, gl_context)) return ::la::AboutError::Win32_CreateModernContext;
 
     // Enable VSync
     /*typedef BOOL(APIENTRY* PFNWGLSWAPINTERVALEXTPROC)(int interval);
@@ -852,122 +1201,105 @@ create_gl_context(HDC main_dc) noexcept {
     wglSwapIntervalEXT(1);*/
 
     // Check out current context
-    if (!wglGetCurrentContext()) return AboutError::Win32_GetCurrentContext;
-    if (!wglGetCurrentDC())      return AboutError::Win32_GetCurrentDC;
-    return AboutError::None;
+    if (!wglGetCurrentContext()) return ::la::AboutError::Win32_GetCurrentContext;
+    if (!wglGetCurrentDC())      return ::la::AboutError::Win32_GetCurrentDC;
+    return ::la::AboutError::None;
 } // create_gl_context
 
 // --------------------------- Key Mapper ---------------------------
 
-static KeySpecial map_key_special(WPARAM wparam) noexcept {
-    using S = KeySpecial;
+static ::la::Key map_key(WPARAM wparam) noexcept {
+    using K = ::la::Key;
 
-#ifdef __LA_CXX_17
-    static_assert(0 == static_cast<int>(S::F1));
-#endif // __LA_CXX_17
+#ifdef LA_CXX_17
+    static_assert(1 == static_cast<int>(K::F1));
+#endif // LA_CXX_17
 
+    // F-keys F1-F12
     if (wparam >= VK_F1 && wparam <= VK_F12)
-        return static_cast<S>(wparam - VK_F1);
+        return static_cast<K>(wparam - VK_F1 + 1);
+
+    // Digits 0-9 (VK_0 = 0x30)
+    if (wparam >= '0' && wparam <= '9') // _0.._9 = 0..9
+        return static_cast<K>(wparam - '0' + static_cast<int>(K::_0));
+
+    // Numpad digits
+    if (wparam >= VK_NUMPAD0 && wparam <= VK_NUMPAD9)
+        return static_cast<K>(wparam - VK_NUMPAD0 + static_cast<int>(K::_0));
+
+    // Letters A-Z (VK_A = 0x41)
+    if (wparam >= 'A' && wparam <= 'Z') // A..Z = 10..35
+        return static_cast<K>(wparam - 'A' + static_cast<int>(K::A));
 
     switch (wparam)
     {
-    case VK_PRIOR:  return S::PageUp;
-    case VK_NEXT:   return S::PageDown;
-    case VK_SHIFT:  return S::Shift;
-    case VK_CONTROL: return S::Control;
-    case VK_MENU /* it isn't key `super` */: return S::Alt;
-    case VK_LWIN:   return S::Super;
-    case VK_ESCAPE: return S::Escape;
-    case VK_INSERT: return S::Insert;
-    case VK_DELETE: return S::Delete;
-    case VK_BACK:   return S::Backspace;
-    case VK_TAB:    return S::Tab;
-    case VK_RETURN: return S::Return;
-    case VK_SCROLL: return S::ScrollLock;
-    case VK_NUMLOCK: return S::NumLock;
-    case VK_CAPITAL: return S::CapsLock;
-    case VK_HOME:   return S::Home;
-    case VK_END:    return S::End;
-    case VK_LEFT:   return S::Left;
-    case VK_UP:     return S::Up;
-    case VK_RIGHT:  return S::Right;
-    case VK_DOWN:   return S::Down;
-    case VK_LBUTTON: return S::MouseLeft;
-    case VK_RBUTTON: return S::MouseRight;
-    case VK_MBUTTON: return S::MouseMiddle;
-    case VK_XBUTTON1: return S::MouseX1;
-    case VK_XBUTTON2: return S::MouseX2;
-    default:          return S::__NONE__;
-    } // switch
-} // map_key_special
+    case VK_PRIOR:      return K::PageUp;
+    case VK_NEXT:       return K::PageDown;
+    case VK_SHIFT:      return K::Shift;
+    case VK_CONTROL:    return K::Control;
+    case VK_MENU /* it isn't key `super` */: return K::Alt;
+    case VK_LWIN:       return K::Super;
+    case VK_ESCAPE:     return K::Escape;
+    case VK_INSERT:     return K::Insert;
+    case VK_DELETE:     return K::Delete;
+    case VK_BACK:       return K::Backspace;
+    case VK_TAB:        return K::Tab;
+    case VK_RETURN:     return K::Return;
+    case VK_SCROLL:     return K::ScrollLock;
+    case VK_NUMLOCK:    return K::NumLock;
+    case VK_CAPITAL:    return K::CapsLock;
+    case VK_HOME:       return K::Home;
+    case VK_END:        return K::End;
+    case VK_LEFT:       return K::Left;
+    case VK_UP:         return K::Up;
+    case VK_RIGHT:      return K::Right;
+    case VK_DOWN:       return K::Down;
+    case VK_LBUTTON:    return K::MouseLeft;
+    case VK_RBUTTON:    return K::MouseRight;
+    case VK_MBUTTON:    return K::MouseMiddle;
+    case VK_XBUTTON1:   return K::MouseX1;
+    case VK_XBUTTON2:   return K::MouseX2;
+    
+    case VK_SPACE:      return K::Space;
+    case VK_OEM_3:      return K::Grave; // Grave (`)
+    case VK_OEM_MINUS:  return K::Hyphen; // Hyphen (-)
+    case VK_OEM_PLUS:   return K::Equal; // Equal (=)
 
-static Key map_key_general(WPARAM wparam) noexcept {
-#ifdef __LA_CXX_17
-    static_assert(sizeof(Key) == sizeof(KeySpecial));
-    static_assert(sizeof(Key) == sizeof(int));
-    static_assert(0 == static_cast<int>(Key::_0));
-    static_assert(10 == static_cast<int>(Key::A));
-#endif // __LA_CXX_17
-    // Digits 0-9 (VK_0 = 0x30)
-    if (wparam >= '0' && wparam <= '9')
-        return static_cast<Key>(wparam - '0'); // _0.._9 = 0..9
 
-    // Letters A-Z (VK_A = 0x41)
-    else if (wparam >= 'A' && wparam <= 'Z')
-        return static_cast<Key>(10 + (wparam - 'A')); // A..Z = 10..35
+    case VK_OEM_4:      return K::BracketLeft;  // [
+    case VK_OEM_6:      return K::BracketRight; // ]
+    case VK_OEM_COMMA:  return K::Comma;        // ,
+    case VK_OEM_PERIOD: return K::Period;       // .
+    case VK_OEM_2:      return K::Slash;
+    case VK_OEM_5:      return K::Backslash;
+    case VK_OEM_1:      return K::Semicolon;    // ;
+    case VK_OEM_7:      return K::Apostrophe;   // '
 
-    // And so on via switch
-    switch (wparam) {
-        case VK_OEM_3:      return Key::Grave; // Grave (`)
-        case VK_OEM_MINUS:  return Key::Hyphen; // Hyphen (-)
-        case VK_OEM_PLUS:   return Key::Equal; // Equal (=)
-        default:            return Key::__NONE__;
+    default:            return K::__NONE__;
     } // switch
 } // map_key
 
-static inline LRESULT CALLBACK handle_key(WPARAM wparam, bool pressed) noexcept {
-    union {
-        union {
-            Key general;
-            Key g;
-        };
-        union {
-            KeySpecial special;
-            KeySpecial s;
-        };
-    } k;
+static inline ::la::Key handle_key(WPARAM wparam, bool pressed) noexcept {
+    ::la::Key k;
 
-#ifdef __LA_CXX_17
-    static_assert(sizeof(Key) == sizeof(KeySpecial));
-    static_assert(sizeof(Key) == sizeof(int));
+#ifdef LA_CXX_17
+    static_assert(sizeof(::la::Key) == sizeof(int));
     static_assert(sizeof(k) == sizeof(int));
 #endif
-    // Try to search for general key
-    k.g = map_key_general(wparam);
+    // Try to search for general key, otherwise returns `__NONE__` (0) as flag.
+    k = map_key(wparam);
 
-    // General check
-    if (k.g == Key::__NONE__)
-#pragma warning(push)
-#pragma warning(disable:6386)
-        key_general_array[static_cast<int>(k.g)] = pressed ? 1 : 0;
-#pragma warning(pop)
-    else // Try to search for special key
-        k.s = map_key_special(wparam);
-
-    // Special check
-    if (k.s != KeySpecial::__NONE__)
-#pragma warning(push)
-#pragma warning(disable:6386)
-        key_special_array[static_cast<int>(k.s)] = pressed ? 1 : 0;
-#pragma warning(pop)
-    return 0;
+    // No needs to check out for `__NONE__`, we simply write the value.
+    key_array[static_cast<int>(k)] = pressed ? 1 : 0;
+    return k;
 } // handle_key
+
 
 // --------------------------- Win Proc ---------------------------
 
 static LRESULT CALLBACK
 win_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) noexcept {
-    Window* win = reinterpret_cast<Window*>(
+    ::la::Window* win = reinterpret_cast<::la::Window*>(
         GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
     switch (msg) {
@@ -977,7 +1309,7 @@ win_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) noexcept {
     } // WM_PAINT
 
     case WM_SIZE: {
-        if (win->renderer_api() == RendererApi::None)
+        if (win->renderer_api() == ::la::RendererApi::None)
             return 0;
 
         // Window Minimized
@@ -988,8 +1320,8 @@ win_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) noexcept {
         // Window Resized
         RECT rect;
         GetClientRect(reinterpret_cast<HWND>(win->native().hwnd), &rect);
-        native::on_geometry_change(*win, static_cast<int>(rect.right - rect.left),
-                                         static_cast<int>(rect.bottom - rect.top));
+        ::la::native::on_geometry_change(*win, static_cast<int>(rect.right - rect.left),
+                                               static_cast<int>(rect.bottom - rect.top));
         return 0;
     } // WM_SIZE
 
@@ -997,9 +1329,6 @@ win_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) noexcept {
         win->handler().on_mouse_move(/* X pos */ LOWORD(lparam),
                                      /* Y pos */ HIWORD(lparam));
         return 0;
-
-    case WM_KEYDOWN: return handle_key(wparam, true);
-    case WM_KEYUP: return handle_key(wparam, false);
 
     case WM_SETFOCUS:
         win->handler().on_focus_change(true);
@@ -1012,8 +1341,29 @@ win_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) noexcept {
     case WM_MOUSEWHEEL: {
         int delta = GET_WHEEL_DELTA_WPARAM(wparam); // +120 or -120
         win->handler().on_scroll_vertical(delta / 120.f);
-        break;
+        return 0;
     }
+
+    case WM_KEYDOWN: {
+        ::la::Key k = handle_key(wparam, true);
+        win->handler().on_key_down(k);
+        return 0;
+    }
+    case WM_KEYUP: {
+        ::la::Key k = handle_key(wparam, false);
+        win->handler().on_key_up(k);
+        return 0;
+    }
+
+    case WM_SYSKEYDOWN:
+        if (wparam == VK_F10)       win->handler().on_key_down(::la::Key::F10);
+        else if (wparam == VK_MENU) win->handler().on_key_down(::la::Key::Alt);
+        return 0;
+
+    case WM_SYSKEYUP:
+        if (wparam == VK_F10)       win->handler().on_key_up(::la::Key::F10);
+        else if (wparam == VK_MENU) win->handler().on_key_up(::la::Key::Alt);
+        return 0;
 
     case WM_NCCREATE: {
         auto create_struct = reinterpret_cast<CREATESTRUCT*>(lparam);
@@ -1023,11 +1373,10 @@ win_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) noexcept {
 
     case WM_DESTROY:
         PostQuitMessage(0);
-        break;
+        return 0;
     } // switch (msg)
 
     return DefWindowProc(hwnd, msg, wparam, lparam);
 } // win_proc
 
-} // namespace la
 #endif // _WIN32

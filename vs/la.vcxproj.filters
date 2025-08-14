@@ -13,5 +13,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\la\la.hpp" />
+    <ClInclude Include="..\src\la\gl.hpp" />
   </ItemGroup>
 </Project>
