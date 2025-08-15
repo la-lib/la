@@ -82,11 +82,6 @@ inline void run() noexcept {
 
         app.win.render();
         app.counter++;
-
-        // Wait
-        __LA_CONSTEXPR_VAR float TARGET_FRAME = 66.6f;
-        if (dt < TARGET_FRAME)
-            la::sleep((TARGET_FRAME - dt) / 1000.f);
     } // while
 
 

@@ -4,7 +4,8 @@
 // Also, define `LA_CONSOLE` if not defined.
 // #define LA_DEBUG_DESTRUCTORS
 
-// I FUCKING HATE MICROSOFT PRODUCTS
+// --------------- I FUCKING HATE MICROSOFT PRODUCTS --------------------------
+
 #if defined(_MSC_VER) && defined(LA_NOSTD)
 extern "C" void* __cdecl memset(void* dest, int ch, size_t count) {
     unsigned char* p = static_cast<unsigned char*>(dest);
@@ -13,6 +14,7 @@ extern "C" void* __cdecl memset(void* dest, int ch, size_t count) {
 }
 #endif
 
+// ------------------------------- INCLUDES -----------------------------------
 
 #include "gl.hpp"
 #include "la.hpp"
@@ -37,7 +39,6 @@ static inline void cpuid(int info[4], int eax, int ecx) {
 }
 #endif // Intrin
 
-
 // ------------------------------ Global Variables ----------------------------
 LA_CONSTEXPR_VAR wchar_t WINDOW_CLASSNAME[] { L"_" };
 LA_CONSTEXPR_VAR LPCSTR DUMMY_CLASS_NAME{ "d" };
@@ -53,7 +54,7 @@ namespace la {
     Simd::FillInt32 fill_int32 = nullptr;
 
     void GlobalInitializer::init() noexcept {
-        volatile GlobalInitializer g {
+        volatile GlobalInitializer _ {
             Simd::has_sse(),
             Simd::has_sse2(),
             Simd::has_avx(),

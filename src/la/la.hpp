@@ -20,8 +20,8 @@
 
 // I FUCKING HATE MICROSOFT PRODUCTS.
 #if defined(_MSC_VER) && defined(LA_NOSTD)
-extern "C" void* __cdecl memset(void* dest, int ch, size_t count);
-#endif
+    extern "C" void* __cdecl memset(void* dest, int ch, size_t count);
+#endif // msvc
 
 // -------------------- C++17 feature detection -------------------------------
 // MSVC
@@ -890,13 +890,14 @@ extern Simd::FillFloat fill_float;
 extern Simd::FillInt32 fill_int32;
 
 struct GlobalInitializer {
+private:
     GlobalInitializer(bool sse, bool sse2, bool avx, bool avx2) noexcept {
         add_float = Simd::choose_add_float(sse, avx);
         add_int32 = Simd::choose_add_int32(sse2, avx2);
         fill_float = Simd::choose_fill_float(sse, avx);
         fill_int32 = Simd::choose_fill_int32(sse2, avx2);
     }
-
+public:
     static void init() noexcept;
 }; // struct GlobalInitializer
 
